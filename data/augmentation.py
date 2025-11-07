@@ -5,6 +5,7 @@ import json
 import hashlib
 from openai import OpenAI
 
+# TODO: Uncomment when API key is set up
 # client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 data_storage_file = "augmented_heart_disease_data.json"
@@ -47,6 +48,7 @@ def augment_features(features: pd.DataFrame, num_aug: int) -> pd.DataFrame:
             - No text explanation
             Just output valid JSON.
             """
+            # TODO: Uncomment when API key is set up
 
             # response = client.chat.completions.create(
             #     model="gpt-5",  # or "gpt-4o" if needed
