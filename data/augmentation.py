@@ -6,7 +6,8 @@ import hashlib
 from openai import OpenAI
 
 # TODO: Uncomment when API key is set up
-# client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+print("OpenAI client initialized.")
 
 data_storage_file = "augmented_heart_disease_data.json"
 
@@ -29,11 +30,13 @@ def augment_features(features: pd.DataFrame, num_aug: int) -> pd.DataFrame:
     for idx, feature_vector in enumerate(features):
         # only augment the first num_aug entries
         if idx >= num_aug:
+            print(f"Reached augmentation limit of {num_aug}, stopping.")
             break
         
         id = str(idx)
         # Utilize storage
         if id in data_storage:
+            print(f"Using cached augmented data for feature vector {id}.")
             new_features[id] = data_storage[id]
 
         else:
@@ -50,14 +53,17 @@ def augment_features(features: pd.DataFrame, num_aug: int) -> pd.DataFrame:
             """
             # TODO: Uncomment when API key is set up
 
-            # response = client.chat.completions.create(
-            #     model="gpt-5",  # or "gpt-4o" if needed
-            #     messages=[{"role": "user", "content": prompt}],
-            #     response_format={"type": "json_object"}
-            # )
+            print(f"Augmenting feature vector {id} via OpenAI API.")
+            response = client.chat.completions.create(
+                model="gpt-5-nano", 
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
 
-            # reformed = response.choices[0].message.parsed
-            reformed = json.loads("{\"text_f\":\"test_v\"}")
+            print(f"Received {response} for feature vector {id}.")
+            reformed = response.choices[0].message.parsed
+            print(f"Augmented feature vector {id}: {reformed}")
+            # reformed = json.loads("{\"text_f\":\"test_v\"}")
 
             # store result
             new_features[id] = reformed

@@ -1,25 +1,24 @@
-from ucimlrepo import fetch_ucirepo
 import pandas as pd
+
+DATASET_PATH = "data/heart_disease/heart_disease_uci.csv"
 
 class UCIData():
     def __init__(self):
-        self.dataset = fetch_ucirepo(name='Heart Disease') 
-
+        self.dataset = pd.read_csv(DATASET_PATH)
+        print(f"Loaded UCI Heart Disease dataset with {self.dataset.shape[0]} rows and {self.dataset.shape[1]} columns.")
+        
     def get_data(self):
-        return self.dataset.data
+        return self.dataset
     
     def get_features(self) -> pd.DataFrame:
-        return self.dataset.data['features']
+        return self.dataset.drop(columns=['num'])
 
     def get_targets(self) -> pd.DataFrame:
-        return self.dataset.data['targets']
+        return self.dataset.data['num']
     
     def get_headers(self) -> list:
-        return self.dataset.data['headers']
+        return self.dataset.columns.to_list()
     
-    def get_metadata(self) -> dict:
-        return self.dataset.metadata
-
     
 
 

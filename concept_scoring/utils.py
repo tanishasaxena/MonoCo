@@ -1,6 +1,7 @@
 import yaml
 import json
 import openai
+import numpy as np
 
 class ConceptScorer:
     def __init__(self, config_path: str):
