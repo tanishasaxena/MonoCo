@@ -1,78 +1,102 @@
-from uci_data import UCIData
 import pandas as pd
 import os
 import json
-import hashlib
 from openai import OpenAI
+import numpy as np
 
-# TODO: Uncomment when API key is set up
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-print("OpenAI client initialized.")
+import numpy as np
+import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
 
-data_storage_file = "augmented_heart_disease_data.json"
-
-# data stores id mapped to augmented feature for each feature vector
-if os.path.exists(data_storage_file):
-    with open(data_storage_file, "r") as f:
-        data_storage = json.load(f)
-else:
-    print(f"{data_storage_file} not found, initializing empty storage.")
-    data_storage = {}
-
-def augment_features(features: pd.DataFrame, num_aug: int) -> pd.DataFrame:
+def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
     """
-    Reform UCI Heart Disease feature vector into a richer feature representation.
-    Uses caching to minimize API calls.
+    Vectorized feature augmentation for the UCI Heart Disease dataset.
+    Converts categorical columns to numeric encodings and adds derived features.
+    Works efficiently on entire DataFrames.
     """
-    new_features = {}
-    not_in_storage = {}
-    # use row index as id instead of hashing because I don't like hashing ¯\_(ツ)_/¯
-    for idx, feature_vector in enumerate(features):
-        # only augment the first num_aug entries
-        if idx >= num_aug:
-            print(f"Reached augmentation limit of {num_aug}, stopping.")
-            break
-        
-        id = str(idx)
-        # Utilize storage
-        if id in data_storage:
-            print(f"Using cached augmented data for feature vector {id}.")
-            new_features[id] = data_storage[id]
 
-        else:
-            prompt = f"""
-            You are a data scientist optimizing features for a heart disease classifier.
-            Given this raw feature vector: {feature_vector}
+    if num_aug is None:
+        df = df.copy()
+    else:
+        df = df.head(num_aug).copy()
 
-            Return a JSON object with:
-            - The same base features, cleaned/scaled logically
-            - New domain-aware engineered features
-            - Numeric or boolean values only
-            - No text explanation
-            Just output valid JSON.
-            """
-            # TODO: Uncomment when API key is set up
+    # --- Normalize text values to lowercase strings ---
+    def norm(series):
+        return series.astype(str).str.strip().str.lower()
 
-            print(f"Augmenting feature vector {id} via OpenAI API.")
-            response = client.chat.completions.create(
-                model="gpt-5-nano", 
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
+    # --- Category mappings (from your schema) ---
+    sex_map = {'male': 1, 'female': 0}
+    dataset_map = {'cleveland': 0, 'hungary': 1, 'switzerland': 2, 'va long beach': 3}
+    cp_map = {
+        'typical angina': 1,
+        'atypical angina': 2,
+        'non-anginal pain': 3,
+        'asymptomatic': 4
+    }
+    restecg_map = {
+        'normal': 0,
+        'st-t abnormality': 1,
+        'lv hypertrophy': 2
+    }
+    slope_map = {'upsloping': 1, 'flat': 2, 'downsloping': 3}
+    thal_map = {'normal': 3, 'fixed defect': 6, 'reversable defect': 7}
 
-            print(f"Received {response} for feature vector {id}.")
-            reformed = response.choices[0].message.parsed
-            print(f"Augmented feature vector {id}: {reformed}")
-            # reformed = json.loads("{\"text_f\":\"test_v\"}")
+    # --- Encode categorical columns ---
+    df['sex_encoded'] = norm(df['sex']).map(sex_map)
+    df['dataset_encoded'] = norm(df['dataset']).map(dataset_map)
+    df['cp_encoded'] = norm(df['cp']).map(cp_map)
+    df['restecg_encoded'] = norm(df['restecg']).map(restecg_map)
+    df['slope_encoded'] = norm(df['slope']).map(slope_map)
+    df['thal_encoded'] = norm(df['thal']).map(thal_map)
 
-            # store result
-            new_features[id] = reformed
-            # add to data storage iff it's new
-            not_in_storage[id] = reformed
+    # --- Boolean normalization (fbs, exang) ---
+    def to_int_bool(col):
+        return (
+            col.astype(str)
+               .str.strip()
+               .str.lower()
+               .replace({'true': 1, 'false': 0, 'yes': 1, 'no': 0})
+               .astype(float)
+        )
 
-    # persist data storage
-    with open(data_storage_file, "w") as f:
-        print(f"Saving augmented data to {data_storage_file}")
-        json.dump(not_in_storage, f, indent=2)
+    df['fbs'] = to_int_bool(df['fbs'])
+    df['exang'] = to_int_bool(df['exang'])
 
-    return new_features
+    # --- Numeric columns ---
+    for col in ['age', 'trestbps', 'chol', 'thalch', 'oldpeak', 'ca']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # --- Derived features (vectorized math) ---
+    df['chol_age_ratio'] = df['chol'] / df['age']
+    df['fbs_trestbps_product'] = df['fbs'] * df['trestbps']
+    df['bp_chol_interaction'] = df['trestbps'] * df['chol']
+    df['heart_rate_reserve'] = df['thalch'] / df['age']
+    df['stress_slope_index'] = (df['slope_encoded'] + 1) * (df['thalch'] - df['oldpeak'])
+    df['exercise_impact'] = df['thalch'] * (1 - df['exang'])
+
+    df['is_hypertensive'] = (df['trestbps'] >= 140).astype(float)
+    df['is_hypercholesterolemia'] = (df['chol'] >= 240).astype(float)
+
+    df['risk_factor_count'] = (
+        df[['is_hypertensive', 'fbs', 'exang']].fillna(0).sum(axis=1)
+    )
+
+    df['sex_cp_interaction'] = df['sex_encoded'] * df['cp_encoded']
+    df['restecg_abnormal'] = (df['restecg_encoded'] != 0).astype(float)
+
+    df['log_chol'] = np.log1p(df['chol'].clip(lower=0))
+    df['log_trestbps'] = np.log1p(df['trestbps'].clip(lower=0))
+    df['oldpeak_sq'] = df['oldpeak'] ** 2
+    df['cardiac_stress_index'] = (df['oldpeak'] * (1 + df['exang'])) / (df['thalch'] + 1)
+    df['metabolic_risk_index'] = (df['chol'] * df['fbs'] * df['trestbps']) / df['age']
+    df['oxygen_efficiency_index'] = df['thalch'] / df['trestbps']
+    df['cp_slope_interaction'] = df['cp_encoded'] * df['slope_encoded']
+
+    df['risk_score_raw'] = (
+        0.4 * df['is_hypertensive'].fillna(0)
+        + 0.3 * df['fbs'].fillna(0)
+        + 0.3 * df['exang'].fillna(0)
+        + 0.2 * df['restecg_abnormal'].fillna(0)
+    )
+
+    return df

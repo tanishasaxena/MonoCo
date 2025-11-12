@@ -58,16 +58,18 @@ class ConceptScorer:
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-5",
+                model="gpt-5-nano",
                 messages=[{"role": "user", "content": query}],
-                temperature=0.0
+                response_format={"type": "json_object"}
             )
+            print(f"Received response: {response}")
             raw = response.choices[0].message.content.strip()
             scores = json.loads(raw)
+            print(f"Parsed concept scores: {scores}")
         except Exception as e:
             print(f"Error obtaining or parsing concept scores: {e}")
             scores = {}
-
+        breakpoint()
         return scores
     
     def automatic_concept_correction(self, concept_scores: dict, label: int):

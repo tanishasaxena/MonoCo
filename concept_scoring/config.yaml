@@ -1,5 +1,5 @@
-heart_disease_present_concepts : heart_disease_present_concepts.txt
-heart_disease_absent_concepts : heart_disease_absent_concepts.txt
+heart_disease_present_concepts : concept_scoring/heart_disease_present_concepts.txt
+heart_disease_absent_concepts : concept_scoring/heart_disease_absent_concepts.txt
 prompt: >
   You are a clinical reasoning model. Based on patient attributes, rate
   how strongly each concept applies on a scale from 0 to 1.
