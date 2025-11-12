@@ -1,6 +1,5 @@
-from xml.etree.ElementInclude import include
 import pandas as pd
-from augmentation import augment_features
+from .augmentation import augment_features
 from typing import Tuple
 
 DATASET_PATH = "data/heart_disease/heart_disease_uci.csv"
