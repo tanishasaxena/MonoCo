@@ -4,7 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils import *
 import pandas as pd
-from data import UCIData
+from data import UCIDataset
 scorer = ConceptScorer("concept_scoring/config.yaml")
 
 
@@ -13,9 +13,9 @@ AUGMENT = False
 # print(scorer.heart_disease_present_concepts)
 # print(scorer.prompt)
 # to run, use the other functions from the scorer.
-dataset = UCIData()
+dataset = UCIDataset()
 dataset.augment() if AUGMENT else None
-features, generated_features = dataset.get_data()
+features = dataset.get_data()
 
 # load df into features including labels
 concept_scores = []
