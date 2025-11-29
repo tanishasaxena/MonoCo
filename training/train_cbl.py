@@ -1,20 +1,17 @@
 import argparse
-import os
 import torch
 import torch.nn.functional as F
 import numpy as np
-from datasets import load_dataset, concatenate_datasets
-import config as CFG
-from transformers import LlamaConfig, LlamaModel, AutoTokenizer
-from peft import LoraConfig, TaskType, get_peft_model
-from modules import CBL
+from modules import TCBL
 import time
-from utils import elastic_net_penalty, mean_pooling
+from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm 
+from sklearn.preprocessing import StandardScaler
 
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from data import UCIDataset
+from data import *
 
 CBL_PATH = "model_checkpoints/cbl/"
 
@@ -22,126 +19,99 @@ parser = argparse.ArgumentParser()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 parser.add_argument("--batch_size", type=int, default=4)
-parser.add_argument("--max_length", type=int, default=350)
-parser.add_argument("--num_workers", type=int, default=0)
+parser.add_argument("--epochs", type=int, default=10)
+parser.add_argument("--lr", type=float, default=1e-3)
 
-def build_loaders(curr_dataset, mode):
-    return torch.utils.data.DataLoader(curr_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-                                             shuffle=True if mode == "train" else False)
 
-if __name__ == "__main__":
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+if __name__=="__main__":
+    def train():
+        best_val_loss = float("inf")
+        results_buffer = ""
+
+        # for idx, path in enumerate(tqdm(paths, desc="Autoencoding + compressing Kodak", ncols=100)):
+        for epoch in tqdm(range(args.epochs), desc="Training...", ncols=100):
+            model.train()
+            total_loss = 0
+
+            for batch_x, batch_y in train_loader:
+                optimizer.zero_grad()
+                logits = model(batch_x)
+                loss = criterion(logits, batch_y)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+
+            # Validation
+            model.eval()
+            val_loss, correct, count = 0, 0, 0
+
+            with torch.no_grad():
+                for batch_x, batch_y in val_loader:
+                    logits = model(batch_x)
+                    loss = criterion(logits, batch_y)
+                    val_loss += loss.item()
+
+                    pred = logits.argmax(dim=1)
+                    correct += (pred == batch_y).sum().item()
+                    count += batch_y.size(0)
+
+            avg_train = total_loss / len(train_loader)
+            avg_val = val_loss / len(val_loader)
+            accuracy = correct / count
+
+            results_buffer += f"\nEpoch {epoch+1}/{args.epochs} | Train Loss: {avg_train:.4f} | Val Loss: {avg_val:.4f} | Val Accuracy: {accuracy:.4f}"
+
+            # Save best model
+            if avg_val < best_val_loss:
+                torch.save(model.state_dict(), f"{CBL_PATH}tcbl_epoch_{epoch+1}.pt")
+                best_val_loss = avg_val
+                # print(f"Epoch {epoch+1}: New best model saved to {CBL_PATH}tcbl_epoch_{epoch+1}.pt")
+        
+        return results_buffer
+
     args = parser.parse_args()
 
-    dataset = UCIDataset()
-    # regular = 920, generated = 100, total: 1020
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [340, 680])
+    uci_ds = UCIDataset()
+    uci_ds.augment()
+    print("Augmented uci dataset: ", uci_ds.get_data().head())
+    concept_ds = ConceptDataset()
 
-    print("tokenizing...")
-    lora_config = LoraConfig(r=8, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj",
-                                                  "down_proj"], bias="none", task_type=TaskType.FEATURE_EXTRACTION)
-    
-    config = LlamaConfig.from_pretrained('meta-llama/Meta-Llama-3-8B')
-    tokenizer = AutoTokenizer.from_pretrained('meta-llama/Meta-Llama-3-8B')
-    tokenizer.pad_token = tokenizer.eos_token
+    if len(uci_ds) != len(concept_ds):
+        print(f"Dataset mismatch: UCIDataset={len(uci_ds)} vs ConceptDataset={len(concept_ds)}")
+        exit(0)
 
-    # TODO: load concept set from acc.py
-    concept_set = None
+    print("\nDatasets loaded successfully. Datasets have same number of rows.")
 
-    print("creating loader...")
-    train_loader = build_loaders(train_dataset, mode="train")
-    val_loader = build_loaders(val_dataset, mode="valid")
+    # Convert entire dataset into tensors so normalization only happens **once**
+    uci_features = np.vstack([uci_ds[i][0] for i in range(len(uci_ds))])
+    uci_features = np.nan_to_num(uci_features, nan=0.0, posinf=1e6, neginf=-1e6)
 
-    print("preparing backbone...")
-    preLM = LlamaModel.from_pretrained('meta-llama/Meta-Llama-3-8B', torch_dtype=torch.bfloat16).to(device)
-    preLM = get_peft_model(preLM, lora_config)
-    preLM.print_trainable_parameters()
-    lora_layers = filter(lambda p: p.requires_grad, preLM.parameters())
-    opt_prelm = torch.optim.Adam(lora_layers, lr=5e-5)
-    cbl = CBL(config, len(concept_set), tokenizer).to(device)
-    opt_cbl = torch.optim.Adam(cbl.parameters(), lr=5e-5)
+    uci_labels   = np.vstack([concept_ds[i][1] for i in range(len(concept_ds))]).reshape(-1)
 
-    print("start training...")
-    best_loss = float('inf')
+    scaler = StandardScaler()
+    uci_features = scaler.fit_transform(uci_features)
 
-    if not os.path.exists(CBL_PATH):
-        os.makedirs(CBL_PATH)
+    X = torch.tensor(uci_features, dtype=torch.float32)
+    y = torch.tensor(uci_labels, dtype=torch.long)
 
-    start = time.time()
-    epochs = CFG.epoch[args.dataset]
+    # ---------------- Training ---------------- #
 
-    for e in range(epochs):
-        print("Epoch ", e+1, ":")
-        preLM.train()
-        cbl.train()
-        training_concept_loss = []
-        training_word_loss = []
-        training_reg_loss = []
+    dataset = torch.utils.data.TensorDataset(X, y)
 
-        for i, batch in enumerate(train_loader):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            concept_label = torch.where(batch["attention_mask"][:, :-1] == 0, -100, batch["label"].view(-1, 1))
-            word_label = torch.where(batch["attention_mask"][:, :-1] == 0, -100, batch["input_ids"][:, 1:])
-            features = preLM(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]).last_hidden_state
-            concepts, unsup, vocabs = cbl(features.float())
-            concept_loss = torch.nn.CrossEntropyLoss()(concepts[:, :-1, :].reshape(-1, len(concept_set)), concept_label.reshape(-1))
-            word_loss = torch.nn.CrossEntropyLoss()(vocabs[:, :-1, :].reshape(-1, config.vocab_size), word_label.reshape(-1))
-            loss = concept_loss + word_loss
-            reg = elastic_net_penalty(cbl.fc.weight[:, :len(concept_set)])
-            loss += 1.0 * reg
-            opt_prelm.zero_grad()
-            opt_cbl.zero_grad()
-            loss.backward()
-            opt_prelm.step()
-            opt_cbl.step()
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-            # Note: removed classifier steps
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size)
 
-            _, unsup, _ = cbl(features.detach().float())
-            opt_cbl.zero_grad()
-            opt_cbl.step()
+    model = TCBL(in_dim=X.shape[1])
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    criterion = torch.nn.CrossEntropyLoss()
 
-            print("batch", str(i), "concept loss:", concept_loss.detach().cpu().numpy(), "word loss:", word_loss.detach().cpu().numpy(), "reg loss:", reg.detach().cpu().numpy(), end="\r")
-            training_concept_loss.append(concept_loss.detach().cpu().numpy())
-            training_word_loss.append(word_loss.detach().cpu().numpy())
-            training_reg_loss.append(reg.detach().cpu().numpy())
-        
-        avg_training_concept_loss = sum(training_concept_loss)/len(training_concept_loss)
-        avg_training_word_loss = sum(training_word_loss) / len(training_word_loss)
-        avg_training_reg_loss = sum(training_reg_loss)/len(training_reg_loss)
-        print("training concept loss:", avg_training_concept_loss, "training word loss:", avg_training_word_loss, "training reg loss: ", avg_training_reg_loss)
+    print("Starting training...")
 
-        # Evaluation
-        preLM.eval()
-        cbl.eval()
-        val_concept_loss = []
-        val_word_loss = []
-        val_reg_loss = []
-        for i, batch in enumerate(val_loader):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            concept_label = torch.where(batch["attention_mask"][:, :-1] == 0, -100, batch["label"].view(-1, 1))
-            word_label = torch.where(batch["attention_mask"][:, :-1] == 0, -100, batch["input_ids"][:, 1:])
-            with torch.no_grad():
-                features = preLM(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]).last_hidden_state
-                concepts, unsup, vocabs = cbl(features.float())
-            concept_loss = torch.nn.CrossEntropyLoss()(concepts[:, :-1, :].reshape(-1, len(concept_set)), concept_label.reshape(-1))
-            word_loss = torch.nn.CrossEntropyLoss()(vocabs[:, :-1, :].reshape(-1, config.vocab_size), word_label.reshape(-1))
-            reg = elastic_net_penalty(cbl.fc.weight[:, :len(concept_set)])
-            val_concept_loss.append(concept_loss.detach().cpu().numpy())
-            val_word_loss.append(word_loss.detach().cpu().numpy())
-            val_reg_loss.append(reg.detach().cpu().numpy())
-        
-        avg_val_concept_loss = sum(val_concept_loss) / len(val_concept_loss)
-        avg_val_word_loss = sum(val_word_loss) / len(val_word_loss)
-        avg_val_reg_loss = sum(val_reg_loss) / len(val_reg_loss)
-        print("val concept loss:", avg_val_concept_loss, "val word loss:", avg_val_word_loss, "val reg loss: ", avg_val_reg_loss)
+    results_buffer = train()
+    print(results_buffer)
 
-        avg_val_loss = avg_val_concept_loss + avg_val_word_loss
-        if avg_val_loss < best_loss:
-            print("save model")
-            best_loss = avg_val_loss
-            preLM.save_pretrained(CBL_PATH + "epoch_" + str(e + 1))
-            torch.save(cbl.state_dict(), CBL_PATH + "epoch_" + str(e + 1) + ".pt")
-    
-    end = time.time()
-    print("time of training CBM:", (end - start) / 3600, "hours")
+    print("Training complete.")

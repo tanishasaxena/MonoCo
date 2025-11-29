@@ -112,3 +112,20 @@ class CBL(nn.Module):
             if eos_token_id is not None and next_token.item() == eos_token_id:
                 break
         return ids, self.relu(concepts)[0]
+    
+class TCBL(nn.Module):
+    def __init__(self, in_dim, hidden_dim=128, concept_dim=20):
+        super().__init__()
+        self.backbone = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+        )
+
+        self.concept_head = nn.Linear(hidden_dim, concept_dim)
+
+    def forward(self, x):
+        h = self.backbone(x)
+        concepts = self.concept_head(h)  # shape: (batch, num_concepts)
+        return concepts # return bottleneck latents optionally
