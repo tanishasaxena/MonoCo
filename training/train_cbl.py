@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data import *
 
 CBL_PATH = "model_checkpoints/cbl/"
+DIST = 0.3
 
 parser = argparse.ArgumentParser()
 
@@ -35,8 +36,9 @@ if __name__=="__main__":
 
             for batch_x, batch_y in train_loader:
                 optimizer.zero_grad()
-                logits = model(batch_x)
-                loss = criterion(logits, batch_y)
+                pred_vecs = model(batch_x)
+                # print(f"Pred vecs shape {pred_vecs.shape} and batch shape {batch_y.shape}")
+                loss = criterion(pred_vecs, batch_y)
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
@@ -47,13 +49,15 @@ if __name__=="__main__":
 
             with torch.no_grad():
                 for batch_x, batch_y in val_loader:
-                    logits = model(batch_x)
-                    loss = criterion(logits, batch_y)
+                    pred_vecs = model(batch_x)
+                    loss = criterion(pred_vecs, batch_y)
                     val_loss += loss.item()
+                    
+                    # print(f"Pred vecs shape {pred_vecs.shape} and batch shape {batch_y.shape}")
+                    # print(f"Pred vecs: {pred_vecs} \n Batch y: {batch_y}")
 
-                    pred = logits.argmax(dim=1)
-                    correct += (pred == batch_y).sum().item()
-                    count += batch_y.size(0)
+                    correct += (abs(pred_vecs - batch_y) < DIST and batch_y != 0).sum().item()
+                    count += (batch_y != 0).sum().item()
 
             avg_train = total_loss / len(train_loader)
             avg_val = val_loss / len(val_loader)
@@ -86,14 +90,17 @@ if __name__=="__main__":
     uci_features = np.vstack([uci_ds[i][0] for i in range(len(uci_ds))])
     uci_features = np.nan_to_num(uci_features, nan=0.0, posinf=1e6, neginf=-1e6)
 
-    uci_labels   = np.vstack([concept_ds[i][1] for i in range(len(concept_ds))]).reshape(-1)
+    uci_labels   = np.vstack([concept_ds[i][0] for i in range(len(concept_ds))])
+
+    print("uci features shape: ", uci_features.shape, " uci labels shape: ", uci_labels.shape)
 
     scaler = StandardScaler()
     uci_features = scaler.fit_transform(uci_features)
 
     X = torch.tensor(uci_features, dtype=torch.float32)
-    y = torch.tensor(uci_labels, dtype=torch.long)
-
+    y = torch.tensor(uci_labels, dtype=torch.float32)
+    
+    
     # ---------------- Training ---------------- #
 
     dataset = torch.utils.data.TensorDataset(X, y)
@@ -107,7 +114,7 @@ if __name__=="__main__":
 
     model = TCBL(in_dim=X.shape[1])
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.MSELoss()
 
     print("Starting training...")
 
