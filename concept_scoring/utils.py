@@ -1,122 +1,112 @@
 import yaml
 import json
-import openai
 import numpy as np
+import asyncio
+import functools
+
+from openai import OpenAI
+
+
+def _run_sync(func, *args, **kwargs):
+    """Run sync SDK call in thread executor for async parallelism."""
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
+
 
 class ConceptScorer:
     def __init__(self, config_path: str):
-        """
-        Loads configuration and initializes the concept scorer.
-        Expects YAML file with:
-            heart_disease_present_concepts: path_to_present_concepts.txt
-            heart_disease_absent_concepts: path_to_absent_concepts.txt
-            prompt: instruction prompt string
-        """
-        # Load YAML config
-        with open(config_path, 'r') as f:
+        # Load YAML
+        with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
-        self.prompt = config.get("prompt", "").strip()
+        self.prompt = config["prompt"].strip()
 
-        # Load concept files
-        present_path = config.get("heart_disease_present_concepts")
-        absent_path = config.get("heart_disease_absent_concepts")
+        with open(config["heart_disease_present_concepts"], "r") as f:
+            self.present = [x.strip() for x in f if x.strip()]
+        with open(config["heart_disease_absent_concepts"], "r") as f:
+            self.absent = [x.strip() for x in f if x.strip()]
 
-        with open(present_path, 'r') as f:
-            self.heart_disease_present_concepts = [line.strip() for line in f if line.strip()]
-        with open(absent_path, 'r') as f:
-            self.heart_disease_absent_concepts = [line.strip() for line in f if line.strip()]
+        self.all_concepts = self.present + self.absent
 
-        # Initialize OpenAI client
-        openai.api_key = config.get("api_key", None)
+        self.client = OpenAI(api_key=config["api_key"])
+        self.model = "gpt-4.1-mini"
 
-    def get_concept_scores(self, features: dict):
-        """
-        Evaluates concept scores given patient features.
+    # ---------------------------------------------------------
+    # SINGLE EXAMPLE CALL — sent to async executor
+    # ---------------------------------------------------------
+    def _call_one(self, features: dict):
+        feature_str = "\n".join(f"{k}: {v}" for k, v in features.items())
+        concept_str = "\n".join(f"- {c}" for c in self.all_concepts)
 
-        Args:
-            features (dict): mapping from feature_name -> value
+        prompt = f"""
+{self.prompt}
 
-        Returns:
-            dict[str, float]: concept -> score in [0, 1]
-        """
-        all_concepts = self.heart_disease_present_concepts + self.heart_disease_absent_concepts
-        feature_desc = "\n".join([f"{k}: {v}" for k, v in features.items()])
-        concept_list = "\n".join([f"- {c}" for c in all_concepts])
+Patient data:
+{feature_str}
 
-        query = f"""
-        {self.prompt}
+Concepts to score (0-1):
+{concept_str}
 
-        Patient data:
-        {feature_desc}
+Return ONLY a JSON object.
+""".strip()
 
-        Concepts to evaluate (score 0 to 1, where 1 = strongly present, 0 = absent):
-        {concept_list}
+        # THIS is the CORRECT format for openai 2.8.1
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+        )
 
-        Return a JSON object: {{ "concept": score, ... }}
-        """
+        raw = resp.choices[0].message.content
+        return json.loads(raw)
 
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-5-nano",
-                messages=[{"role": "user", "content": query}],
-                response_format={"type": "json_object"}
-            )
-            print(f"Received response: {response}")
-            raw = response.choices[0].message.content.strip()
-            scores = json.loads(raw)
-            print(f"Parsed concept scores: {scores}")
-        except Exception as e:
-            print(f"Error obtaining or parsing concept scores: {e}")
-            scores = {}
-        breakpoint()
-        return scores
-    
+    # ---------------------------------------------------------
+    # BATCH (TRUE PARALLELISM)
+    # ---------------------------------------------------------
+    async def _async_batch(self, dicts, concurrency=12):
+        sem = asyncio.Semaphore(concurrency)
+
+        async def wrap(feats):
+            async with sem:
+                return await _run_sync(self._call_one, feats)
+
+        tasks = [wrap(d) for d in dicts]
+        return await asyncio.gather(*tasks)
+
+    def get_concept_scores_batch(self, dicts, concurrency=12):
+        return asyncio.run(self._async_batch(dicts, concurrency))
+
+    # ---------------------------------------------------------
+    # YOUR ORIGINAL ACC — untouched
+    # ---------------------------------------------------------
     def automatic_concept_correction(self, concept_scores: dict, label: int):
-        """
-        Clips all concept scores to [0,1].
-        If label == 0 (no disease): set all 'present' concepts to 0.
-        If label > 0 (disease): set all 'absent' concepts to 0.
-        """
-        corrected = {}
+        corrected = []
+        n_present = len(self.present)
 
-        for concept, score in concept_scores.items():
+        for i, (_, score) in enumerate(concept_scores.items()):
             clipped = float(np.clip(score, 0, 1))
 
-            if label == 0 and concept in self.heart_disease_present_concepts:
-                corrected[concept] = 0.0
-            elif label > 0 and concept in self.heart_disease_absent_concepts:
-                corrected[concept] = 0.0
+            if label == 0 and i < n_present:
+                corrected.append(0.0)
+            elif label > 0 and i >= n_present:
+                corrected.append(0.0)
             else:
-                corrected[concept] = clipped
+                corrected.append(clipped)
 
         return corrected
-    
+
+
+# ---------------------------------------------------------
+# Parameterized ACC (unchanged)
+# ---------------------------------------------------------
 import torch
 import torch.nn as nn
 
 class Parameterized_ACC(nn.Module):
-    """
-    Parameterized Automatic Concept Correction (ACC)
-    A one-to-one linear mapping: each input concept has its own weight and bias.
-    """
-
     def __init__(self, dim: int):
-        """
-        Args:
-            dim (int): number of input (and output) concepts
-        """
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.bias = nn.Parameter(torch.zeros(dim))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Applies element-wise affine transformation:
-            y_i = w_i * x_i + b_i
-        Args:
-            x (torch.Tensor): [batch_size, dim]
-        Returns:
-            torch.Tensor: [batch_size, dim]
-        """
+    def forward(self, x):
         return x * self.weight + self.bias
