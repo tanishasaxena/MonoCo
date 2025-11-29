@@ -1,30 +1,47 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import openai, inspect, sys
+print("PYTHONPATH:", sys.path)
+print("OPENAI MODULE:", openai)
+print("OPENAI FILE:", inspect.getfile(openai))
+print("DIR OF MODULE:", list(openai.__dict__.keys())[:40])
 
-from utils import *
 import pandas as pd
-from data import UCIData
-scorer = ConceptScorer("concept_scoring/config.yaml")
+from utils import ConceptScorer
 
+scorer = ConceptScorer("config.yaml")
 
-AUGMENT = False
-# print(scorer.heart_disease_absent_concepts)
-# print(scorer.heart_disease_present_concepts)
-# print(scorer.prompt)
-# to run, use the other functions from the scorer.
-dataset = UCIData()
-dataset.augment() if AUGMENT else None
-features, generated_features = dataset.get_data()
+FILE_PATH = "/home/iron/code/MonoCo/data/heart_disease/heart_disease_uci.csv"
+OUT_PATH  = "/home/iron/code/MonoCo/data/heart_disease/heart_disease_uci_concepts.csv"
 
-# load df into features including labels
-concept_scores = []
-for i, row in features.iterrows():
-    break
-    row_dict = row.to_dict()
-    label = row_dict["num"]
-    row_dict.pop("num", None)
-    scores = scorer.get_concept_scores(row_dict)
-    corrected_scores = scorer.automatic_concept_correction(scores, label)
-    concept_scores.append(corrected_scores)
-    
+features = pd.read_csv(FILE_PATH)
+
+rows = []
+BATCH = 32
+
+for start in range(0, len(features), BATCH):
+    print(start)
+    end = start + BATCH
+    chunk = features.iloc[start:end]
+
+    feature_dicts = []
+    labels = []
+
+    for _, row in chunk.iterrows():
+        d = row.to_dict()
+        lbl = d.pop("num", None)
+        feature_dicts.append(d)
+        labels.append(lbl)
+
+    # one batched API call
+    scored = scorer.get_concept_scores_batch(feature_dicts)
+    print(scored, labels)
+    for corrected_raw, lbl in zip(scored, labels):
+        corrected = scorer.automatic_concept_correction(corrected_raw, lbl)
+        merged = {f"concept_{j}": v for j, v in enumerate(corrected)}
+        merged["label"] = lbl
+        rows.append(merged)
+
+df = pd.DataFrame(rows)
+df.to_csv(OUT_PATH, index=False)
