@@ -42,12 +42,12 @@ def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
     thal_map = {'normal': 3, 'fixed defect': 6, 'reversable defect': 7}
 
     # --- Encode categorical columns ---
-    df['sex_encoded'] = norm(df['sex']).map(sex_map)
-    df['dataset_encoded'] = norm(df['dataset']).map(dataset_map)
-    df['cp_encoded'] = norm(df['cp']).map(cp_map)
-    df['restecg_encoded'] = norm(df['restecg']).map(restecg_map)
-    df['slope_encoded'] = norm(df['slope']).map(slope_map)
-    df['thal_encoded'] = norm(df['thal']).map(thal_map)
+    df['sex'] = norm(df['sex']).map(sex_map)
+    df['dataset'] = norm(df['dataset']).map(dataset_map)
+    df['cp'] = norm(df['cp']).map(cp_map)
+    df['restecg'] = norm(df['restecg']).map(restecg_map)
+    df['slope'] = norm(df['slope']).map(slope_map)
+    df['thal'] = norm(df['thal']).map(thal_map)
 
     # --- Boolean normalization (fbs, exang) ---
     def to_int_bool(col):
@@ -71,7 +71,7 @@ def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
     df['fbs_trestbps_product'] = df['fbs'] * df['trestbps']
     df['bp_chol_interaction'] = df['trestbps'] * df['chol']
     df['heart_rate_reserve'] = df['thalch'] / df['age']
-    df['stress_slope_index'] = (df['slope_encoded'] + 1) * (df['thalch'] - df['oldpeak'])
+    df['stress_slope_index'] = (df['slope'] + 1) * (df['thalch'] - df['oldpeak'])
     df['exercise_impact'] = df['thalch'] * (1 - df['exang'])
 
     df['is_hypertensive'] = (df['trestbps'] >= 140).astype(float)
@@ -81,8 +81,8 @@ def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
         df[['is_hypertensive', 'fbs', 'exang']].fillna(0).sum(axis=1)
     )
 
-    df['sex_cp_interaction'] = df['sex_encoded'] * df['cp_encoded']
-    df['restecg_abnormal'] = (df['restecg_encoded'] != 0).astype(float)
+    df['sex_cp_interaction'] = df['sex'] * df['cp']
+    df['restecg_abnormal'] = (df['restecg'] != 0).astype(float)
 
     df['log_chol'] = np.log1p(df['chol'].clip(lower=0))
     df['log_trestbps'] = np.log1p(df['trestbps'].clip(lower=0))
@@ -90,7 +90,7 @@ def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
     df['cardiac_stress_index'] = (df['oldpeak'] * (1 + df['exang'])) / (df['thalch'] + 1)
     df['metabolic_risk_index'] = (df['chol'] * df['fbs'] * df['trestbps']) / df['age']
     df['oxygen_efficiency_index'] = df['thalch'] / df['trestbps']
-    df['cp_slope_interaction'] = df['cp_encoded'] * df['slope_encoded']
+    df['cp_slope_interaction'] = df['cp'] * df['slope']
 
     df['risk_score_raw'] = (
         0.4 * df['is_hypertensive'].fillna(0)
