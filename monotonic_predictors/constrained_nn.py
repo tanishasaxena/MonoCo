@@ -3,7 +3,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Dense, Input
 
-from airt.keras.layers import MonoDense
+from mono_dense_keras import MonoDense
 
 import numpy as np
 import pandas as pd

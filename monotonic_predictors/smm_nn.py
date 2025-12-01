@@ -7,12 +7,12 @@ from SMM.SMM_MLP import SMM_MLP
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-def SMM(X,y,monotone_constraints):
+def SMM(X_train,y_train,X_test,y_test,monotone_constraints):
     monotone_constraints = np.array(list(monotone_constraints.values()))
-    X = X * monotone_constraints
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.1, random_state=41
-    )
+    # X = X * monotone_constraints
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     X, y, test_size=0.1, random_state=41
+    # )
     # Convert to FloatTensor
     X_train = torch.tensor(X_train, dtype=torch.float32)
     y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1,1)

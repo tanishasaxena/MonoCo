@@ -4,13 +4,18 @@ from sklearn.model_selection import train_test_split
 from simple_models import XGB, sweep_feature, LGB, CAT
 from constrained_nn import constrained_nn 
 from smm_nn import SMM
-heart_disease_data = pd.read_csv("/home/iron/code/MonoCo/data/heart_disease/heart_disease_uci_concepts.csv")
-feature_cols = heart_disease_data.columns[:-1]      # all except last, adjust if needed
-label_col = "label"
+train_f = pd.read_csv("/home/tsaxena/10747/MonoCo/concept_bottleneck/data_split/train_concepts.csv")
+train_l = pd.read_csv("/home/tsaxena/10747/MonoCo/concept_bottleneck/data_split/train_labels.csv")
+test_f = pd.read_csv("/home/tsaxena/10747/MonoCo/concept_bottleneck/data_split/test_concepts.csv")
+test_l = pd.read_csv("/home/tsaxena/10747/MonoCo/concept_bottleneck/data_split/test_labels.csv")
 
-X = heart_disease_data[feature_cols].to_numpy(dtype=float)
-y = heart_disease_data["label"].to_numpy(dtype=float)
-y = y / 4.0
+X_train = train_f.to_numpy(dtype=float)
+y_train = train_l.to_numpy(dtype=float)
+y_train = y_train / 4.0
+
+X_test = test_f.to_numpy(dtype=float)
+y_test = test_l.to_numpy(dtype=float)
+y_test = y_test / 4.0
 
 monotone_constraints = {}
 for i in range(20):
@@ -19,9 +24,9 @@ for i in range(20):
     else:
         monotone_constraints["x" + str(i)] = -1
 
-model_lgb = SMM(X = X,y = y,monotone_constraints=monotone_constraints)
+model_lgb = SMM(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,monotone_constraints=monotone_constraints)
 i = 1 # pick a sample
-x = X[i].copy()
+x = X_train[i].copy()
 
 xs, preds = sweep_feature(model_lgb, x, f_index=5)
 

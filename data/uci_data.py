@@ -19,7 +19,7 @@ class UCIDataset(torch.utils.data.Dataset):
             print(f"Loaded generated data with {self.generated_data.shape[0]} rows and {self.generated_data.shape[1]} columns.")
 
         # Split once so __getitem__ doesn’t recompute every time
-        self.features = self.dataset.drop(columns=['num'])
+        self.features = self.dataset.drop(columns=['num', 'id'])
         self.targets = self.dataset['num']
 
     def __len__(self) -> int:
@@ -47,7 +47,7 @@ class UCIDataset(torch.utils.data.Dataset):
     def augment(self, num_aug=None):
         self.dataset = augment_features(self.dataset, num_aug=num_aug)
         # Refresh cached splits
-        self.features = self.dataset.drop(columns=['num'])
+        self.features = self.dataset.drop(columns=['num', 'id'])
         self.targets = self.dataset['num']
 
 class ConceptDataset(torch.utils.data.Dataset):
@@ -61,7 +61,7 @@ class ConceptDataset(torch.utils.data.Dataset):
             print(f"Loaded generated data with {self.generated_data.shape[0]} rows and {self.generated_data.shape[1]} columns.")
 
         # Split once so __getitem__ doesn’t recompute every time
-        self.features = self.dataset.drop(columns=['label'])
+        self.features = self.dataset
         self.targets = self.dataset['label']
 
     def __len__(self) -> int:

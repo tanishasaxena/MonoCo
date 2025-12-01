@@ -33,7 +33,6 @@ if __name__=="__main__":
 
     uci_ds = UCIDataset()
     uci_ds.augment()
-    print("Augmented uci dataset: ", uci_ds.get_data().head())
     concept_ds = ConceptDataset()
 
     if len(uci_ds) != len(concept_ds):
@@ -46,9 +45,11 @@ if __name__=="__main__":
     uci_features = np.vstack([uci_ds[i][0] for i in range(len(uci_ds))])
     uci_features = np.nan_to_num(uci_features, nan=0.0, posinf=1e6, neginf=-1e6)
 
-    uci_labels   = np.vstack([concept_ds[i][0] for i in range(len(concept_ds))])
+    uci_labels = np.vstack([concept_ds[i][0] for i in range(len(concept_ds))])
 
     print("uci features shape: ", uci_features.shape, " uci labels shape: ", uci_labels.shape)
+
+    print("column headers before: \n", uci_labels[1])
 
     scaler = StandardScaler()
     uci_features = scaler.fit_transform(uci_features)
@@ -57,6 +58,14 @@ if __name__=="__main__":
     # ---------------- Training ---------------- #
 
     X_train, X_val, y_train, y_val = train_test_split(uci_features, uci_labels, test_size=0.2, random_state=42)
+
+    train_label = y_train[:, -1] # for last column
+    y_train = y_train[:, :-1] # for all but last column
+    
+    test_label = y_val[:, -1] # for last column
+    y_val = y_val[:, :-1] # for all but last column
+
+    print("column headers after: \n", y_train[1])
 
     base = xgb.XGBRegressor(
         n_estimators=300,
@@ -71,13 +80,22 @@ if __name__=="__main__":
 
     print("Starting training...")
 
-    Y_pred = model.predict(X_val)
-    mse = np.mean((Y_pred - y_val) ** 2)
+    y_pred = model.predict(X_val)
+
+    np.savetxt('concept_bottleneck/data_split/train_features.csv', X_train, delimiter=',')
+    np.savetxt('concept_bottleneck/data_split/train_concepts.csv', model.predict(X_train), delimiter=',')
+    np.savetxt('concept_bottleneck/data_split/test_features.csv', X_val, delimiter=',')
+    np.savetxt('concept_bottleneck/data_split/test_concepts.csv', y_pred, delimiter=',')
+
+    np.savetxt('concept_bottleneck/data_split/train_labels.csv', train_label, delimiter=',')
+    np.savetxt('concept_bottleneck/data_split/test_labels.csv', test_label, delimiter=',')
+
+    mse = np.mean((y_pred - y_val) ** 2)
     var = np.var(y_val)
 
     non_zero_count = np.count_nonzero(y_val)
     mask = y_val != 0
-    within_dist_count = np.sum(np.abs(Y_pred[mask] - y_val[mask]) < DIST)
+    within_dist_count = np.sum(np.abs(y_pred[mask] - y_val[mask]) < DIST)
     accuracy = within_dist_count / non_zero_count
     print(f"Validation Variance: {var:.4f}")
     print(f"Validation MSE: {mse:.4f}")
