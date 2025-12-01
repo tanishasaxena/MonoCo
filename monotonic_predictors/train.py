@@ -24,7 +24,7 @@ for i in range(20):
     else:
         monotone_constraints["x" + str(i)] = -1
 
-model_lgb = SMM(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,monotone_constraints=monotone_constraints)
+model_lgb = XGB(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,monotone_constraints=monotone_constraints)
 i = 1 # pick a sample
 x = X_train[i].copy()
 

@@ -6,12 +6,19 @@ from xgboost import XGBRegressor, DMatrix
 import lightgbm as lgb
 from catboost import CatBoostRegressor
 
-def XGB(X,y,monotone_constraints):
-    feature_names = [f"x{i}" for i in range(X.shape[1])]
+def XGB(X_train,y_train,X_test,y_test,monotone_constraints):
+    # feature_names = [f"x{i}" for i in range(X.shape[1])]
 
-    dfX = pd.DataFrame(X, columns=feature_names)
+    # dfX = pd.DataFrame(X, columns=feature_names)
 
-    X_train, X_test, y_train, y_test = train_test_split(dfX, y, test_size=0.1, random_state=1)
+    # X_train, X_test, y_train, y_test = train_test_split(dfX, y, test_size=0.1, random_state=1)
+    
+    # Convert dict monotone_constraints to tuple ordered by feature index
+    if isinstance(monotone_constraints, dict):
+        n_features = X_train.shape[1]
+        monotone_constraints = tuple(
+            monotone_constraints.get(f"x{i}", 0) for i in range(n_features)
+        )
     
     model = XGBRegressor(
         n_estimators=50,
@@ -26,7 +33,7 @@ def XGB(X,y,monotone_constraints):
     print("XGBoost MSE on train:", mean_squared_error(y_train, model.predict(X_train)))
     print("XGBoost MSE on test:", mean_squared_error(y_test, pred))
     df_results = pd.DataFrame({
-        "y_test": y_test,
+        "y_test": y_test.flatten(),
         "y_pred": pred
     })
     print(df_results.head(20))
@@ -46,14 +53,14 @@ def sweep_feature(model, x, f_index, low=0, high=1, steps=200):
     return np.array(xs), np.array(preds)
 
 
-def LGB(X, y, monotone_constraints):
-    feature_names = [f"x{i}" for i in range(X.shape[1])]
-    dfX = pd.DataFrame(X, columns=feature_names)
+def LGB(X_train,y_train,X_test,y_test,monotone_constraints):
+    # feature_names = [f"x{i}" for i in range(X.shape[1])]
+    # dfX = pd.DataFrame(X, columns=feature_names)
     monotone_constraints = list(monotone_constraints.values())
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        dfX, y, test_size=0.1, random_state=41
-    )
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     dfX, y, test_size=0.1, random_state=41
+    # )
 
     train_data = lgb.Dataset(X_train, label=y_train)
 
@@ -86,18 +93,18 @@ def LGB(X, y, monotone_constraints):
     return model
 
 
-def CAT(X, y, monotone_constraints):
+def CAT(X_train,y_train,X_test,y_test,monotone_constraints):
     # Same as XGB/LGB wrapper
-    feature_names = [f"x{i}" for i in range(X.shape[1])]
-    dfX = pd.DataFrame(X, columns=feature_names)
+    # feature_names = [f"x{i}" for i in range(X.shape[1])]
+    # dfX = pd.DataFrame(X, columns=feature_names)
 
     # Convert dict → monotone list if needed
     if isinstance(monotone_constraints, dict):
         monotone_constraints = list(monotone_constraints.values())
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        dfX, y, test_size=0.1, random_state=41
-    )
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     dfX, y, test_size=0.1, random_state=41
+    # )
 
     model = CatBoostRegressor(
         depth=6,
