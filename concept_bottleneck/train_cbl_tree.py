@@ -22,6 +22,8 @@ from data import *
 CBL_PATH = "model_checkpoints/cbl/"
 DIST = 0.3
 
+GENERATED = True
+
 parser = argparse.ArgumentParser()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,10 +37,10 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     # generated=True ==> use generated data
-    uci_ds = UCIDataset(generated=True)
+    uci_ds = UCIDataset(generated=GENERATED)
     # uci_ds.numerize() # only use numerize if you're not augmenting -- converts data to numeric
     uci_ds.augment() # implicitly also converts data to numeric, which is why numerize() should not be used here
-    concept_ds = ConceptDataset(generated=True)
+    concept_ds = ConceptDataset(generated=GENERATED)
 
     if len(uci_ds) != len(concept_ds):
         print(f"Dataset mismatch: UCIDataset={len(uci_ds)} vs ConceptDataset={len(concept_ds)}")
@@ -49,42 +51,40 @@ if __name__=="__main__":
     # Convert entire dataset into tensors so normalization only happens **once**
     uci_features = np.vstack([uci_ds[i][0] for i in range(len(uci_ds))])
     uci_features = np.nan_to_num(uci_features, nan=0.0, posinf=1e6, neginf=-1e6)
+    if GENERATED:
+        generated_features = uci_features[-100:]  # last 100 columns are generated features
+        uci_features = uci_features[:-100]  # all but last 100 columns
+        print("Generated features shape: ", generated_features.shape)
 
     uci_labels = np.vstack([concept_ds[i][0] for i in range(len(concept_ds))])
 
-    print("uci features shape: ", uci_features.shape, " uci labels shape: ", uci_labels.shape)
+    if GENERATED:
+        generated_labels = uci_labels[-100:]  # last N columns are generated features
+        uci_labels = uci_labels[:-100]  # all but last N columns
+        print("Generated labels shape: ", generated_labels.shape)
 
-    
-    # Check that all values in the last column are integers between 0 and 4 (inclusive)
-    last_col = uci_labels[:, -1]
-    
-    # Check if all values are integers
-    is_integer = np.all(last_col == last_col.astype(int))
-    if not is_integer:
-        non_int_mask = last_col != last_col.astype(int)
-        non_int_values = last_col[non_int_mask]
-        print(f"✗ Found {np.sum(non_int_mask)} non-integer values: {non_int_values}")
-        exit(1)
-        
-    # Check if all values are in range [0, 4]
-    if np.all((last_col >= 0) & (last_col <= 4)):
-        print("✓ All values in last column are integers between 0 and 4 (inclusive)")
-    else:
-        invalid_mask = (last_col < 0) | (last_col > 4)
-        invalid_values = last_col[invalid_mask]
-        print(f"✗ Found {np.sum(invalid_mask)} values outside range [0, 4]: {invalid_values}")
-        exit(1)
+    print("generated labels: ", generated_labels)
+
+    print("uci features shape: ", uci_features.shape, " uci labels shape: ", uci_labels.shape)
 
 
     print("column headers before: \n", uci_labels[1])
 
     scaler = StandardScaler()
     uci_features = scaler.fit_transform(uci_features)
-    
+    if GENERATED:
+        generated_features = scaler.transform(generated_features)
     
     # ---------------- Training ---------------- #
 
     X_train, X_val, y_train, y_val = train_test_split(uci_features, uci_labels, test_size=0.2, random_state=42)
+    
+    if GENERATED:
+        print("Augmenting training data with generated samples...")
+        X_train = np.vstack([X_train, generated_features])
+        y_train = np.vstack([y_train, generated_labels])
+
+    print("train features shape: ", X_train.shape, " train labels shape: ", y_train.shape)
 
     train_label = y_train[:, -1] # for last column
     y_train = y_train[:, :-1] # for all but last column
@@ -92,7 +92,8 @@ if __name__=="__main__":
     test_label = y_val[:, -1] # for last column
     y_val = y_val[:, :-1] # for all but last column
 
-    print("column headers after: \n", y_train[1])
+    print("train labels after: \n", train_label)
+    # exit(0)
 
     base = xgb.XGBRegressor(
         n_estimators=300,
@@ -128,7 +129,7 @@ if __name__=="__main__":
     # np.savetxt('concept_bottleneck/data_split/augmented_train_labels.csv', train_label, delimiter=',')
     # np.savetxt('concept_bottleneck/data_split/augmented_test_labels.csv', test_label, delimiter=',')
 
-    # # Generated (random between training and testing)
+    # # Generated (only in training)
     # np.savetxt('concept_bottleneck/data_split/generated_train_features.csv', X_train, delimiter=',')
     # np.savetxt('concept_bottleneck/data_split/generated_train_concepts.csv', model.predict(X_train), delimiter=',')
     # np.savetxt('concept_bottleneck/data_split/generated_test_features.csv', X_val, delimiter=',')
