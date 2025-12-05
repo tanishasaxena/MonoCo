@@ -100,3 +100,64 @@ def augment_features(df: pd.DataFrame, num_aug=None) -> pd.DataFrame:
     )
 
     return df
+
+
+def numerize_feature(df: pd.DataFrame, num_num=None) -> pd.DataFrame:
+    """
+    Vectorized feature augmentation for the UCI Heart Disease dataset.
+    Converts categorical columns to numeric encodings and adds derived features.
+    Works efficiently on entire DataFrames.
+    """
+
+    if num_num is None:
+        df = df.copy()
+    else:
+        df = df.head(num_num).copy()
+
+    # --- Normalize text values to lowercase strings ---
+    def norm(series):
+        return series.astype(str).str.strip().str.lower()
+
+    # --- Category mappings (from your schema) ---
+    sex_map = {'male': 1, 'female': 0}
+    dataset_map = {'cleveland': 0, 'hungary': 1, 'switzerland': 2, 'va long beach': 3}
+    cp_map = {
+        'typical angina': 1,
+        'atypical angina': 2,
+        'non-anginal pain': 3,
+        'asymptomatic': 4
+    }
+    restecg_map = {
+        'normal': 0,
+        'st-t abnormality': 1,
+        'lv hypertrophy': 2
+    }
+    slope_map = {'upsloping': 1, 'flat': 2, 'downsloping': 3}
+    thal_map = {'normal': 3, 'fixed defect': 6, 'reversable defect': 7}
+
+    # --- Encode categorical columns ---
+    df['sex'] = norm(df['sex']).map(sex_map)
+    df['dataset'] = norm(df['dataset']).map(dataset_map)
+    df['cp'] = norm(df['cp']).map(cp_map)
+    df['restecg'] = norm(df['restecg']).map(restecg_map)
+    df['slope'] = norm(df['slope']).map(slope_map)
+    df['thal'] = norm(df['thal']).map(thal_map)
+
+    # --- Boolean normalization (fbs, exang) ---
+    def to_int_bool(col):
+        return (
+            col.astype(str)
+               .str.strip()
+               .str.lower()
+               .replace({'true': 1, 'false': 0, 'yes': 1, 'no': 0})
+               .astype(float)
+        )
+
+    df['fbs'] = to_int_bool(df['fbs'])
+    df['exang'] = to_int_bool(df['exang'])
+
+    # --- Numeric columns ---
+    for col in ['age', 'trestbps', 'chol', 'thalch', 'oldpeak', 'ca']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    return df
