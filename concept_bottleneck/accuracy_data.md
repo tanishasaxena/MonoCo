@@ -31,13 +31,12 @@ Loaded generated data with 100 rows and 16 columns.
 Loaded UCI Heart Disease Concept dataset with 920 rows and 21 columns.
 Loaded generated data with 100 rows and 21 columns.
 
-Datasets loaded successfully. Datasets have same number of rows.
-uci features shape:  (1020, 14)  uci labels shape:  (1020, 20)
 Starting training...
-Validation Variance: 0.1381
-Validation MSE: 0.0565
-Validation Accuracy (within 0.3 for non-zero vals): 0.7733
-Validation Accuracy (within 0.3 for all vals): 0.8529
+Validation Variance: 0.1354
+Validation MSE: 0.0546
+Validation Accuracy (within 0.3 for non-zero vals): 0.7740
+Validation Accuracy (within 0.3 for all vals): 0.8571
+Training complete.
 Training complete.
 
 # Augmented + Generated
@@ -47,11 +46,9 @@ Loaded generated data with 100 rows and 16 columns.
 Loaded UCI Heart Disease Concept dataset with 920 rows and 21 columns.
 Loaded generated data with 100 rows and 21 columns.
 
-Datasets loaded successfully. Datasets have same number of rows.
-uci features shape:  (1020, 33)  uci labels shape:  (1020, 20)
 Starting training...
-Validation Variance: 0.1381
-Validation MSE: 0.0578
-Validation Accuracy (within 0.3 for non-zero vals): 0.7567
-Validation Accuracy (within 0.3 for all vals): 0.8393
+Validation Variance: 0.1354
+Validation MSE: 0.0558
+Validation Accuracy (within 0.3 for non-zero vals): 0.7577
+Validation Accuracy (within 0.3 for all vals): 0.8446
 Training complete.

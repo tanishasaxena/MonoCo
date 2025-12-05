@@ -54,6 +54,28 @@ if __name__=="__main__":
 
     print("uci features shape: ", uci_features.shape, " uci labels shape: ", uci_labels.shape)
 
+    
+    # Check that all values in the last column are integers between 0 and 4 (inclusive)
+    last_col = uci_labels[:, -1]
+    
+    # Check if all values are integers
+    is_integer = np.all(last_col == last_col.astype(int))
+    if not is_integer:
+        non_int_mask = last_col != last_col.astype(int)
+        non_int_values = last_col[non_int_mask]
+        print(f"✗ Found {np.sum(non_int_mask)} non-integer values: {non_int_values}")
+        exit(1)
+        
+    # Check if all values are in range [0, 4]
+    if np.all((last_col >= 0) & (last_col <= 4)):
+        print("✓ All values in last column are integers between 0 and 4 (inclusive)")
+    else:
+        invalid_mask = (last_col < 0) | (last_col > 4)
+        invalid_values = last_col[invalid_mask]
+        print(f"✗ Found {np.sum(invalid_mask)} values outside range [0, 4]: {invalid_values}")
+        exit(1)
+
+
     print("column headers before: \n", uci_labels[1])
 
     scaler = StandardScaler()
