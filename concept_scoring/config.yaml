@@ -3,4 +3,4 @@ heart_disease_absent_concepts : heart_disease_absent_concepts.txt
 prompt: >
   You are a clinical reasoning model. Based on patient attributes, rate
   how strongly each concept applies on a scale from 0 to 1.
-api_key: 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
+api_key: 
